@@ -192,6 +192,18 @@ func assertOrigins(t *testing.T, result *Result, base string, want map[string]st
 	}
 }
 
+func errorNamesPath(err error, filename string) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, filename) || strings.Contains(text, strings.ReplaceAll(filename, `\`, `\\`))
+}
+
+func errorNamesSlashPath(err error, filename string) bool {
+	return errorNamesPath(err, filepath.FromSlash(filename))
+}
+
 func TestLoadErrors(t *testing.T) {
 	tests := []struct {
 		name, content, key string
@@ -223,9 +235,9 @@ func TestLoadErrors(t *testing.T) {
 			if test.global {
 				file = "global.yaml"
 			}
-			opts, base := fixture(t, map[string]string{file: test.content}, "")
+			opts, _ := fixture(t, map[string]string{file: test.content}, "")
 			result, err := Load(opts)
-			if result != nil || err == nil || !strings.Contains(err.Error(), filepath.Join(base, filepath.FromSlash(file))) || !strings.Contains(err.Error(), test.key) {
+			if result != nil || err == nil || !errorNamesSlashPath(err, file) || !strings.Contains(err.Error(), test.key) {
 				t.Fatalf("Load = (%#v, %v), want error naming %s and %q", result, err, file, test.key)
 			}
 		})
@@ -346,7 +358,7 @@ func TestTrust(t *testing.T) {
 			opts.Trust = checker
 			result, err := Load(opts)
 			if test.fail {
-				if !errors.Is(err, sentinel) || result != nil || !strings.Contains(err.Error(), near) {
+				if !errors.Is(err, sentinel) || result != nil || (!errorNamesPath(err, near) && !errorNamesSlashPath(err, "home/org/repo/.dx.yaml")) {
 					t.Fatalf("Load = (%#v, %v), want wrapped checker error", result, err)
 				}
 				return

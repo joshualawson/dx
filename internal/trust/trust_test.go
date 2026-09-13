@@ -185,7 +185,9 @@ func TestIsTrustedWithoutApproval(t *testing.T) {
 }
 
 func TestStoreLifecycle(t *testing.T) {
-	base := t.TempDir()
+	// Relative approvals must share a volume with the working directory.
+	t.Chdir(t.TempDir())
+	base := mustWorkingDir(t)
 	s := &Store{Path: filepath.Join(base, "state", "dx", "trust.json")}
 	path := filepath.Join(base, ".dx.yaml")
 	other := filepath.Join(base, "other", ".dx.yaml")

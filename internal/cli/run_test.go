@@ -33,8 +33,11 @@ func TestRunSpecPlatforms(t *testing.T) {
 				}
 				return ""
 			}
-			git := hostJoin(goos, e.Home, ".gitconfig")
-			aws := hostJoin(goos, e.Home, ".aws")
+			// Credential fixtures describe the simulated OS, not the test host.
+			git, aws := "/home/me/.gitconfig", "/home/me/.aws"
+			if goos == "windows" {
+				git, aws = `C:\Users\me\.gitconfig`, `C:\Users\me\.aws`
+			}
 			e.Exists = func(p string) bool { return p == git || p == aws || p == "/agent.sock" }
 			e.Environ = []string{"PATH=/host/bin", "HOME=/wrong", "TOKEN=host", "TOKEN=second", "SSH_AUTH_SOCK=/agent.sock", "USER=wrong"}
 			f.group = "987"

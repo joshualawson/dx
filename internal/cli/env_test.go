@@ -12,18 +12,26 @@ import (
 )
 
 func TestPreferredCwd(t *testing.T) {
+	base := t.TempDir()
+	cwd := filepath.Join(base, "real", "repo")
+	visible := filepath.Join(base, "visible", "repo")
 	for _, tt := range []struct {
 		name, pwd string
 		same      bool
 		want      string
 	}{
-		{name: "symlink", pwd: "/visible/repo", same: true, want: "/visible/repo"},
-		{name: "stale", pwd: "/wrong", want: "/real/repo"},
-		{name: "unset", want: "/real/repo"},
-		{name: "relative", pwd: "repo", same: true, want: "/real/repo"},
+		{name: "symlink", pwd: visible, same: true, want: visible},
+		{name: "stale", pwd: filepath.Join(base, "wrong"), want: cwd},
+		{name: "unset", want: cwd},
+		{name: "relative", pwd: "repo", same: true, want: cwd},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got := preferredCwd("/real/repo", tt.pwd, func(a, b string) bool { return tt.same })
+			got := preferredCwd(cwd, tt.pwd, func(a, b string) bool {
+				if a != cwd || b != tt.pwd {
+					t.Fatalf("same-folder inputs = %q, %q, want %q, %q", a, b, cwd, tt.pwd)
+				}
+				return tt.same
+			})
 			if got != tt.want {
 				t.Fatalf("cwd = %q, want %q", got, tt.want)
 			}
@@ -32,14 +40,18 @@ func TestPreferredCwd(t *testing.T) {
 }
 
 func TestMountPaths(t *testing.T) {
+	// Non-Windows branches intentionally delegate host paths to filepath.
+	base := t.TempDir()
+	src := filepath.Join(base, "home", "me", "src")
+	home := filepath.Join(base, "Users", "me")
 	tests := []struct {
 		name, goos, cwd, mount, want string
 		fail                         bool
 	}{
-		{name: "linux relative", goos: "linux", cwd: "/home/me/src/sub", mount: "..", want: "/home/me/src"},
-		{name: "darwin absolute", goos: "darwin", cwd: "/Users/me/src", mount: "/Users/me", want: "/Users/me"},
-		{name: "outside", goos: "linux", cwd: "/home/me/src", mount: "/home/me/other", fail: true},
-		{name: "prefix sibling", goos: "linux", cwd: "/src-other", mount: "/src", fail: true},
+		{name: "linux relative", goos: "linux", cwd: filepath.Join(src, "sub"), mount: "..", want: src},
+		{name: "darwin absolute", goos: "darwin", cwd: filepath.Join(home, "src"), mount: home, want: home},
+		{name: "outside", goos: "linux", cwd: src, mount: filepath.Join(base, "home", "me", "other"), fail: true},
+		{name: "prefix sibling", goos: "linux", cwd: src + "-other", mount: src, fail: true},
 		{name: "windows relative", goos: "windows", cwd: `C:\Users\me\src\sub`, mount: "..", want: `C:\Users\me\src`},
 		{name: "windows case", goos: "windows", cwd: `C:\Users\me\src`, mount: `c:\users\me`, want: `c:\users\me`},
 		{name: "windows slash", goos: "windows", cwd: `C:\Users\me\src`, mount: "C:/Users/me", want: `C:\Users\me`},
@@ -68,9 +80,12 @@ func TestMountPaths(t *testing.T) {
 }
 
 func TestStatePaths(t *testing.T) {
+	base := t.TempDir()
+	home := filepath.Join(base, "home", "me")
+	state := filepath.Join(base, "state")
 	for _, tt := range []struct{ goos, home, base, want string }{
-		{goos: "linux", home: "/home/me", want: "/home/me/.local/state/dx"},
-		{goos: "darwin", home: "/Users/me", base: "/state", want: "/state/dx"},
+		{goos: "linux", home: home, want: filepath.Join(home, ".local", "state", "dx")},
+		{goos: "darwin", home: home, base: state, want: filepath.Join(state, "dx")},
 		{goos: "windows", home: `C:\Users\me`, base: `C:\Users\me\AppData\Local`, want: `C:\Users\me\AppData\Local\dx`},
 		{goos: "windows", base: `\\server\share\state`, want: `\\server\share\state\dx`},
 	} {
@@ -79,8 +94,12 @@ func TestStatePaths(t *testing.T) {
 			if got := hostDir(filename, tt.goos); got != tt.want {
 				t.Fatalf("state = %q, want %q", got, tt.want)
 			}
-			if got := hostJoin(tt.goos, tt.want, "network.json"); !strings.HasSuffix(got, "network.json") {
-				t.Fatalf("cache = %q", got)
+			wantCache := filepath.Join(tt.want, "network.json")
+			if tt.goos == "windows" {
+				wantCache = tt.want + `\network.json`
+			}
+			if got := hostJoin(tt.goos, tt.want, "network.json"); got != wantCache {
+				t.Fatalf("cache = %q, want %q", got, wantCache)
 			}
 		})
 	}

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -283,6 +284,7 @@ func TestHostNetworkErrors(t *testing.T) {
 			cachePath := filepath.Join(t.TempDir(), "cache.json")
 			ctx := context.Background()
 			want := ""
+			var wantPaths []string
 			switch name {
 			case "context":
 				t.Setenv("DX_DOCKER_TEST_CONTEXT_FAIL", "1")
@@ -295,7 +297,9 @@ func TestHostNetworkErrors(t *testing.T) {
 			case "cache directory":
 				writeFixture(t, cachePath, "not a directory")
 				cachePath = filepath.Join(cachePath, "child.json")
-				want = cachePath
+				want = "host network cache"
+				// Windows may report the blocking parent when creating the cache directory.
+				wantPaths = []string{cachePath, filepath.Dir(cachePath)}
 			case "cancelled":
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
@@ -308,6 +312,21 @@ func TestHostNetworkErrors(t *testing.T) {
 			_, err := r.HostNetworkWorks(ctx, cachePath)
 			if err == nil || !strings.Contains(err.Error(), want) {
 				t.Fatalf("error = %v, want containing %q", err, want)
+			}
+			if len(wantPaths) != 0 {
+				var pathErr *os.PathError
+				if !errors.As(err, &pathErr) {
+					t.Fatalf("error does not wrap a filesystem error: %v", err)
+				}
+				matched := false
+				for _, path := range wantPaths {
+					if pathErr.Path == path && strings.Contains(err.Error(), strconv.Quote(path)) {
+						matched = true
+					}
+				}
+				if !matched {
+					t.Fatalf("error = %v, want naming a failing path in %q", err, wantPaths)
+				}
 			}
 		})
 	}

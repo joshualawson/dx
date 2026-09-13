@@ -149,11 +149,11 @@ func TestRunnerMissingBinary(t *testing.T) {
 			} else {
 				_, err = r.Output(context.Background(), "version")
 			}
-			if err == nil || !strings.Contains(err.Error(), "docker must be installed") || !strings.Contains(err.Error(), r.Bin) {
+			if err == nil || !strings.Contains(err.Error(), "docker must be installed") || !strings.Contains(err.Error(), strconv.Quote(r.Bin)) {
 				t.Fatalf("missing binary error = %v", err)
 			}
-			if !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("error does not wrap os.ErrNotExist: %v", err)
+			if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, exec.ErrNotFound) {
+				t.Fatalf("error does not wrap a missing executable error: %v", err)
 			}
 		})
 	}
