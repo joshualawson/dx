@@ -1,0 +1,9 @@
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/dx-idle/
+!cmd/dx-idle/**
+!images/
+!images/**
+images/.verification/

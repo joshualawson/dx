@@ -1,0 +1,7 @@
+/dist/
+/.smoke/
+images/.verification/
+/dx
+/dx.exe
+*.test
+coverage.out
