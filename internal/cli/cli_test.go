@@ -95,7 +95,9 @@ func testEnv(t *testing.T) (Env, *fakeDocker, *bytes.Buffer, *bytes.Buffer) {
 	state := filepath.Join(base, "state")
 	vars := map[string]string{"XDG_STATE_HOME": state, "XDG_CONFIG_HOME": filepath.Join(base, "config")}
 	e := Env{
-		Cwd: cwd, Home: home, GOOS: "linux", GOARCH: "amd64", Username: "me", UID: 1000, GID: 1001,
+		Shims: &fakeInstaller{}, ShimDir: filepath.Join(base, "shims"), Exe: filepath.Join(base, "dx"),
+		OnPath: func(string, string, string) bool { return true },
+		Cwd:    cwd, Home: home, GOOS: "linux", GOARCH: "amd64", Username: "me", UID: 1000, GID: 1001,
 		Getenv: func(k string) string { return vars[k] }, Stdin: strings.NewReader(""), Stdout: stdout, Stderr: stderr,
 		Exists:   func(p string) bool { _, err := os.Stat(p); return err == nil },
 		StateDir: filepath.Join(state, "dx"), Docker: f, DockerBin: "/usr/bin/docker", Version: "1.2.3",

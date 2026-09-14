@@ -30,9 +30,15 @@ func Main(e Env) int {
 }
 
 func execute(e Env) (int, error) {
-	in, err := parse(e.Args)
-	if err != nil {
-		return 0, err
+	var in invocation
+	var err error
+	if e.ShimTool != "" {
+		in.Command = append([]string{e.ShimTool}, e.Args...)
+	} else {
+		in, err = parse(e.Args)
+		if err != nil {
+			return 0, err
+		}
 	}
 	switch in.Subcommand {
 	case "help", "version":
@@ -51,6 +57,10 @@ func execute(e Env) (int, error) {
 	}
 	store := &trust.Store{Path: trust.DefaultPath(e.GOOS, e.Home, e.Getenv)}
 	switch in.Subcommand {
+	case "shims":
+		return 0, shimsCommand(e, store, in.Command)
+	case "which":
+		return 0, whichCommand(e, store, in.Command)
 	case "ps":
 		return 0, listWarm(e, in.Command)
 	case "stop":
@@ -70,6 +80,11 @@ func execute(e Env) (int, error) {
 	}
 	if in.Subcommand == "config" {
 		return 0, printConfig(e.Stdout, result, len(in.Command) != 0)
+	}
+	if e.ShimTool != "" {
+		if reason := localReason(e, result, e.ShimTool); reason != "" {
+			return runLocal(e, e.ShimTool, reason)
+		}
 	}
 	root, err := mountRoot(e, in.Mount)
 	if err != nil {
@@ -116,7 +131,7 @@ func load(e Env, store *trust.Store) (*config.Result, error) {
 
 type alreadyReported struct{}
 
-func (alreadyReported) Error() string { return "config approval required" }
+func (alreadyReported) Error() string { return "error already reported" }
 
 func approve(e Env, store *trust.Store, input *bufio.Reader, filename string, yes bool) error {
 	content, err := e.ReadFile(filename)
@@ -280,6 +295,9 @@ func doctor(e Env, store *trust.Store, args []string) error {
 		fmt.Fprintf(e.Stdout, "warm containers: %s\n", err)
 	} else {
 		fmt.Fprintf(e.Stdout, "warm containers: %d\n", len(containers))
+	}
+	if err := doctorShims(e); err != nil {
+		fmt.Fprintf(e.Stdout, "shims: %s\n", err)
 	}
 	root, err := mountRoot(e, "")
 	if err != nil {

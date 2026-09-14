@@ -47,6 +47,10 @@ Flags must precede the command; `--flag=value` is accepted.
 | `dx help` | Print help |
 | `dx ps` | List warm containers |
 | `dx stop [--all]` | Stop warm containers for this project, or all |
+| `dx shims install [tool...]` | Install tool shims |
+| `dx shims uninstall [tool...]` | Remove tool shims |
+| `dx shims list` | List shims and their status |
+| `dx which <tool>` | Show whether a shim uses dx or a local executable |
 
 Subcommand names are special only as the first argument with no preceding dx flags. A tool whose name clashes runs with `dx -- <cmd>`.
 
@@ -95,6 +99,7 @@ First match wins:
 - Maps such as `tools` and `env` merge key by key.
 - Single values are replaced by the nearer file.
 - Lists are replaced; `key+:` appends to the inherited list instead.
+- `local` is allowed in global and project config; `local+:` appends tool names that shims run locally.
 
 ### Example
 
@@ -122,7 +127,7 @@ A `.dx.yaml` from a repo you didn't write could mount secrets, forward credentia
 - A terminal prompt shows each untrusted file with `trust.Describe` output and asks `y/N`.
 - Without a terminal, dx tells the user to run `dx trust <path>`.
 - Approvals are stored as path + SHA-256 of the file. If the file changes, dx asks again.
-- Only `tools.<name>.version` and `root: false` need no approval. `root: true` needs approval because it discards parent settings.
+- Only `tools.<name>.version`, `root: false`, and `local` need no approval. `root: true` needs approval because it discards parent settings.
 - The global config is always trusted.
 
 ## Running containers
@@ -145,7 +150,7 @@ A `.dx.yaml` from a repo you didn't write could mount secrets, forward credentia
 
 - **TTY:** dx requests `-t` only when stdin and stdout are real terminals, so redirects to `/dev/null` and pipes work.
 - **File ownership:** Linux commands run as the host uid:gid.
-- **State:** `$XDG_STATE_HOME/dx` (default `~/.local/state/dx`), or `%LOCALAPPDATA%\dx` on Windows; holds `trust.json`, `network.json`, and `identity/passwd` and `identity/group`.
+- **State:** `$XDG_STATE_HOME/dx` (default `~/.local/state/dx`), or `%LOCALAPPDATA%\dx` on Windows; holds `trust.json`, `network.json`, and `identity/passwd` and `identity/group`. Shims are in `$XDG_DATA_HOME/dx/bin` (default `~/.local/share/dx/bin`), or `%LOCALAPPDATA%\dx\bin` on Windows.
 - **Home:** named volume `dx-home` is mounted at the host home path inside the container; credential mounts sit within it.
 - On Linux, newly created home volumes are chowned to the host user and credential parent folders (`.config`, `.docker`, `.cargo`) are pre-created.
 - **Linux identity:** minimal read-only `/etc/passwd` and `/etc/group` contain root, nobody, the user, and the Docker group when needed, so ssh and git support unknown image uids.
@@ -183,6 +188,7 @@ internal/config/    loading and merging
 internal/trust/     approvals
 internal/project/   root detection
 internal/route/     command → image resolution
+internal/shim/      shim install, detection and local lookup
 internal/hostenv/   credential mounts, env filtering, container paths, identity files
 internal/docker/    docker commands, warm containers
 images/<name>/      Dockerfiles
@@ -225,8 +231,21 @@ Known gap: credentials stored in the macOS keychain or Windows Credential Manage
 - `tcp://` and `ssh://` Docker hosts are errors.
 - `dx-base` includes the `docker` CLI and compose plugin.
 
+## Shims (Decided)
+
+- A shim is a link named for a tool that points to dx. Invoked under that name, dx passes all arguments to the tool and reads none as dx flags.
+- macOS and Linux use symlinks in `$XDG_DATA_HOME/dx/bin` (default `~/.local/share/dx/bin`); Windows uses `<tool>.exe` hard links in `%LOCALAPPDATA%\dx\bin`, or copies when linking fails.
+- `dx shims install [tool...]` installs named shims or every built-in command. The directory must precede local installs on `PATH`; dx prints setup instructions when it is absent.
+- `dx shims uninstall [tool...]` removes named shims or all shims, and only removes dx shims.
+- `dx shims list` shows TOOL, RUNS and PATH; stale Windows copies and symlinks to old dx locations are marked. Re-run install to refresh them.
+- `dx which <tool>` shows the selected dx image, reason and warm/cold state, or the local executable and reason; it also shows shim and `PATH` status. A missing selected local tool exits 125.
+- `DX_LOCAL=1` or `local: [go, npm]` makes shims run local tools. Lookup skips the shims folder and other dx links; missing tools fail with no fallback.
+- Direct `dx <tool>` calls always use containers. `local` and `DX_LOCAL` affect only shims.
+- `dx doctor` reports the shims directory, `PATH` status, installed count and stale count.
+- On macOS and Linux, language servers work through shims because container paths match host paths. Windows shims suit command lines, not language servers, because `/c/...` paths are not editor-mapped.
+- The first call in a project starts a warm container; later calls reuse it.
+
 ## Later
 
-- **Shims:** `go`, `gopls` etc. on `PATH` that route through dx, with per-call, per-shell, per-project and global switches between dx and local installs, `dx which`, and no silent fallback.
 - **Credential bridge:** a helper inside the container that asks dx on the host for keychain-stored credentials (e.g. `git credential fill`, `gh auth token`).
 - Windows host environment values containing Windows paths, e.g. `KUBECONFIG=C:\...`, are not translated to container paths yet.

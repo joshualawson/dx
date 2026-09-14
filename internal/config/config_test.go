@@ -58,11 +58,11 @@ func TestLoad(t *testing.T) {
 		{
 			name: "defaults",
 			check: func(t *testing.T, result *Result, base string) {
-				want := Config{Tools: map[string]Tool{}, Env: map[string]string{}, Credentials: map[string]bool{"all": true}, Trusted: []string{}, IdleTimeout: Duration(30 * time.Minute)}
+				want := Config{Tools: map[string]Tool{}, Env: map[string]string{}, Credentials: map[string]bool{"all": true}, Trusted: []string{}, Local: []string{}, IdleTimeout: Duration(30 * time.Minute)}
 				if !reflect.DeepEqual(result.Config, want) {
 					t.Fatalf("config = %#v, want %#v", result.Config, want)
 				}
-				wantOrigins := map[string]string{"root": "default", "docker": "default", "credentials.all": "default", "trusted": "default", "idle_timeout": "default"}
+				wantOrigins := map[string]string{"root": "default", "docker": "default", "credentials.all": "default", "trusted": "default", "local": "default", "idle_timeout": "default"}
 				if !reflect.DeepEqual(result.Origins, wantOrigins) {
 					t.Errorf("origins = %#v, want %#v", result.Origins, wantOrigins)
 				}
@@ -70,7 +70,7 @@ func TestLoad(t *testing.T) {
 		},
 		{
 			name:    "global only",
-			files:   map[string]string{"global.yaml": "docker: true\nidle_timeout: 45m\ntrusted: ['~', ~/src, /srv/work, ~another]\ncredentials: {all: false, ssh: true}\ntools: {go: {image: custom/go, version: '1.25', warm: false}}\nenv: {GOPRIVATE: example.test/*}\n"},
+			files:   map[string]string{"global.yaml": "docker: true\nidle_timeout: 45m\ntrusted: ['~', ~/src, /srv/work, ~another]\nlocal: [go, npm]\ncredentials: {all: false, ssh: true}\ntools: {go: {image: custom/go, version: '1.25', warm: false}}\nenv: {GOPRIVATE: example.test/*}\n"},
 			sources: []string{"global.yaml"},
 			check: func(t *testing.T, result *Result, base string) {
 				want := Config{
@@ -78,11 +78,12 @@ func TestLoad(t *testing.T) {
 					Tools:   map[string]Tool{"go": {Image: "custom/go", Version: "1.25", Warm: boolPtr(false)}},
 					Env:     map[string]string{"GOPRIVATE": "example.test/*"},
 					Trusted: []string{filepath.Join(base, "home"), filepath.Join(base, "home", "src"), "/srv/work", "~another"},
+					Local:   []string{"go", "npm"},
 				}
 				if !reflect.DeepEqual(result.Config, want) {
 					t.Errorf("config = %#v, want %#v", result.Config, want)
 				}
-				assertOrigins(t, result, base, map[string]string{"docker": "global.yaml", "idle_timeout": "global.yaml", "tools.go.image": "global.yaml", "tools.go.version": "global.yaml", "tools.go.warm": "global.yaml", "env.GOPRIVATE": "global.yaml", "credentials.all": "global.yaml", "credentials.ssh": "global.yaml", "trusted": "global.yaml"})
+				assertOrigins(t, result, base, map[string]string{"docker": "global.yaml", "idle_timeout": "global.yaml", "tools.go.image": "global.yaml", "tools.go.version": "global.yaml", "tools.go.warm": "global.yaml", "env.GOPRIVATE": "global.yaml", "credentials.all": "global.yaml", "credentials.ssh": "global.yaml", "trusted": "global.yaml", "local": "global.yaml"})
 			},
 		},
 		{
@@ -116,6 +117,32 @@ func TestLoad(t *testing.T) {
 					t.Errorf("trusted = %#v", result.Config.Trusted)
 				}
 				assertOrigins(t, result, base, map[string]string{"trusted": "global.yaml"})
+			},
+		},
+		{
+			name:    "project replaces global local",
+			files:   map[string]string{"global.yaml": "local: [go, npm]\n", "home/org/repo/.dx.yaml": "local: [cargo]\n"},
+			sources: []string{"global.yaml", "home/org/repo/.dx.yaml"},
+			check: func(t *testing.T, result *Result, base string) {
+				if !reflect.DeepEqual(result.Config.Local, []string{"cargo"}) {
+					t.Errorf("local = %#v", result.Config.Local)
+				}
+				assertOrigins(t, result, base, map[string]string{"local": "home/org/repo/.dx.yaml"})
+			},
+		},
+		{
+			name: "local append across layers",
+			files: map[string]string{
+				"global.yaml":            "local: [go]\n",
+				"home/org/.dx.yaml":      "local+: [npm]\n",
+				"home/org/repo/.dx.yaml": "local+: [cargo]\n",
+			},
+			sources: []string{"global.yaml", "home/org/.dx.yaml", "home/org/repo/.dx.yaml"},
+			check: func(t *testing.T, result *Result, base string) {
+				if !reflect.DeepEqual(result.Config.Local, []string{"go", "npm", "cargo"}) {
+					t.Errorf("local = %#v", result.Config.Local)
+				}
+				assertOrigins(t, result, base, map[string]string{"local": "home/org/repo/.dx.yaml"})
 			},
 		},
 		{
@@ -224,6 +251,10 @@ func TestLoadErrors(t *testing.T) {
 		{"invalid duration", "idle_timeout: forever\n", "duration", false},
 		{"integer duration", "idle_timeout: 30\n", "duration", false},
 		{"invalid env", "env: {BAD: [one, two]}\n", "string", false},
+		{"invalid local path", "local: [bin/go]\n", "bin/go", false},
+		{"invalid local empty", "local: ['']\n", "invalid local entry", false},
+		{"invalid local append path", "local+: [bin/go]\n", "bin/go", false},
+		{"local not list", "local: go\n", "local", false},
 		{"append non list", "docker+: [true]\n", "non-list", false},
 		{"append scalar", "trusted+: hello\n", "list", true},
 		{"ambiguous append", "trusted: []\ntrusted+: []\n", "cannot appear together", true},
@@ -280,6 +311,23 @@ func TestCredentialEnabled(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if got := (Config{Credentials: test.credentials}).CredentialEnabled("ssh"); got != test.want {
 				t.Errorf("CredentialEnabled = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestRunsLocal(t *testing.T) {
+	cfg := Config{Local: []string{"go", "npm", "go.exe", "Go"}}
+	for _, test := range []struct {
+		tool string
+		want bool
+	}{
+		{"go", true}, {"npm", true}, {"go.exe", true}, {"Go", true},
+		{"GO", false}, {"node", false}, {"", false},
+	} {
+		t.Run(test.tool, func(t *testing.T) {
+			if got := cfg.RunsLocal(test.tool); got != test.want {
+				t.Errorf("RunsLocal(%q) = %t, want %t", test.tool, got, test.want)
 			}
 		})
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/joshualawson/dx/internal/config"
 	"github.com/joshualawson/dx/internal/docker"
 	"github.com/joshualawson/dx/internal/project"
+	"github.com/joshualawson/dx/internal/shim"
 	"github.com/joshualawson/dx/internal/trust"
 )
 
@@ -30,30 +31,42 @@ type DockerClient interface {
 	SocketMount(context.Context, string, func(string) string) (docker.Mount, string, error)
 }
 
+type ShimInstaller interface {
+	Install([]string) ([]string, error)
+	Uninstall([]string) ([]string, error)
+	List() ([]shim.Entry, error)
+}
+
 type Env struct {
-	Args                           []string
-	Cwd, Home                      string
-	GOOS, GOARCH                   string
-	Getenv                         func(string) string
-	Environ                        []string
-	Stdin                          io.Reader
-	Stdout, Stderr                 io.Writer
-	StdinTTY, StdoutTTY, StderrTTY bool
-	UID, GID                       int
-	Username                       string
-	Exists                         func(string) bool
-	StateDir                       string
-	Docker                         DockerClient
-	DockerBin                      string
-	Version                        string
-	Err                            error
-	LoadConfig                     func(config.Options) (*config.Result, error)
-	FindRoot                       func(string, string) (string, error)
-	PresentMarkers                 func(string) ([]string, error)
-	ReadFile                       func(string) ([]byte, error)
-	WriteFile                      func(string, []byte, os.FileMode) error
-	MkdirAll                       func(string, os.FileMode) error
-	ForgetHostNetwork              func(string) error
+	ShimTool, Exe, ShimDir, PathEnv, PathExt string
+	Shims                                    ShimInstaller
+	ShimErr                                  error
+	OnPath                                   func(string, string, string) bool
+	FindLocal                                func(string, string, string, string, string, string) (string, error)
+	ExecLocal                                func(string, []string, []string) (int, error)
+	Args                                     []string
+	Cwd, Home                                string
+	GOOS, GOARCH                             string
+	Getenv                                   func(string) string
+	Environ                                  []string
+	Stdin                                    io.Reader
+	Stdout, Stderr                           io.Writer
+	StdinTTY, StdoutTTY, StderrTTY           bool
+	UID, GID                                 int
+	Username                                 string
+	Exists                                   func(string) bool
+	StateDir                                 string
+	Docker                                   DockerClient
+	DockerBin                                string
+	Version                                  string
+	Err                                      error
+	LoadConfig                               func(config.Options) (*config.Result, error)
+	FindRoot                                 func(string, string) (string, error)
+	PresentMarkers                           func(string) ([]string, error)
+	ReadFile                                 func(string) ([]byte, error)
+	WriteFile                                func(string, []byte, os.FileMode) error
+	MkdirAll                                 func(string, os.FileMode) error
+	ForgetHostNetwork                        func(string) error
 }
 
 type runnerClient struct{ runner *docker.Runner }
@@ -116,6 +129,18 @@ func System(version ...string) Env {
 	if len(version) != 0 {
 		e.Version = version[0]
 	}
+	e.ShimTool = shim.ToolName(os.Args[0], e.GOOS)
+	e.Exe, err = os.Executable()
+	if err == nil {
+		e.Exe, err = filepath.EvalSymlinks(e.Exe)
+	}
+	if err != nil {
+		e.ShimErr = fmt.Errorf("resolve dx executable: %w", err)
+	}
+	e.PathEnv, e.PathExt = e.Getenv("PATH"), e.Getenv("PATHEXT")
+	e.ShimDir = shim.Dir(e.GOOS, e.Home, e.Getenv)
+	e.Shims = &shim.Installer{Dir: e.ShimDir, Exe: e.Exe, GOOS: e.GOOS}
+	e.OnPath, e.FindLocal, e.ExecLocal = shim.OnPath, shim.FindLocal, shim.ExecLocal
 	e.StateDir = hostDir(trust.DefaultPath(e.GOOS, e.Home, e.Getenv), e.GOOS)
 	e.DockerBin, _ = exec.LookPath("docker")
 	e.Docker = runnerClient{&docker.Runner{Bin: e.DockerBin, Stdin: e.Stdin, Stdout: e.Stdout, Stderr: e.Stderr}}

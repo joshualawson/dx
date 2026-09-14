@@ -86,7 +86,7 @@ func parse(args []string) (invocation, error) {
 
 func isSubcommand(s string) bool {
 	switch s {
-	case "config", "trust", "doctor", "version", "help", "ps", "stop":
+	case "config", "trust", "doctor", "version", "help", "ps", "stop", "shims", "which":
 		return true
 	}
 	return false
@@ -99,6 +99,9 @@ const help = `Usage: dx [dx flags] <cmd> [args...]
        dx doctor [--recheck]
        dx ps
        dx stop [--all]
+       dx shims install|uninstall [tool...]
+       dx shims list
+       dx which <tool>
        dx version | dx --version
        dx help | dx -h | dx --help
 
@@ -114,5 +117,7 @@ Use dx -- config to run a tool named config; dx --image foo config also runs it.
 All tool arguments pass through unchanged.
 dx images for go, node, python and rust reuse a warm container per project
 until it has been idle for idle_timeout (default 30m).
+Shims run tools through dx; DX_LOCAL=1 or local: [tool] in config runs the local install instead.
+dx <tool> always uses the container.
 Tool exit codes pass through; dx errors exit 125.
 `

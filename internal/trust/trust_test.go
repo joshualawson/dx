@@ -28,6 +28,10 @@ func TestNeedsApproval(t *testing.T) {
 		{"root null", map[string]any{"root": nil}, true},
 		{"root string", map[string]any{"root": "false"}, true},
 		{"version", toolDoc("version", "1.25"), false},
+		{"local", map[string]any{"local": []any{"go", "npm"}}, false},
+		{"local append", map[string]any{"local+": []any{"cargo"}}, false},
+		{"local root false and version", map[string]any{"local": []any{"go"}, "root": false, "tools": map[string]any{"go": map[string]any{"version": "1.25"}}}, false},
+		{"local with env", map[string]any{"local": []any{"go"}, "env": map[string]any{"FOO": "bar"}}, true},
 		{"version append", toolDoc("version+", []any{"1.25"}), false},
 		{"empty tools", map[string]any{"tools": map[string]any{}}, false},
 		{"empty tool", map[string]any{"tools": map[string]any{"go": map[string]any{}}}, false},
@@ -70,6 +74,8 @@ func TestDescribe(t *testing.T) {
 		{"root true append", map[string]any{"root+": true}, []string{"root = true"}},
 		{"root false append", map[string]any{"root+": false}, nil},
 		{"safe", map[string]any{"root": false, "tools": map[string]any{"go": map[string]any{"version": "1.25"}}}, nil},
+		{"local omitted", map[string]any{"local": []any{"go"}, "local+": []any{"npm"}}, nil},
+		{"local with env", map[string]any{"local": []any{"go"}, "env": map[string]any{"FOO": "bar"}}, []string{"env.FOO = bar"}},
 		{"root and version", map[string]any{"root": true, "tools": map[string]any{"go": map[string]any{"version": "1.25"}}}, []string{"root = true"}},
 		{"nested and sorted", map[string]any{
 			"root":        true,
@@ -160,6 +166,7 @@ func TestIsTrustedWithoutApproval(t *testing.T) {
 		trusted, want bool
 	}{
 		{"version", toolDoc("version", "1.25"), false, true},
+		{"local", map[string]any{"local": []any{"go"}}, false, true},
 		{"root true", map[string]any{"root": true}, false, false},
 		{"root false", map[string]any{"root": false}, false, true},
 		{"missing store", toolDoc("image", "evil/go"), false, false},

@@ -2,9 +2,12 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 )
+
+var localToolName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
 
 func validate(doc map[string]any, global bool) error {
 	normalized := make(map[string]any, len(doc))
@@ -12,7 +15,7 @@ func validate(doc map[string]any, global bool) error {
 		key := strings.TrimSuffix(rawKey, "+")
 		value := doc[rawKey]
 		switch key {
-		case "root", "tools", "env", "docker", "credentials", "trusted", "idle_timeout":
+		case "root", "tools", "env", "docker", "credentials", "trusted", "local", "idle_timeout":
 		default:
 			return fmt.Errorf("unknown key %q", rawKey)
 		}
@@ -23,7 +26,7 @@ func validate(doc map[string]any, global bool) error {
 			if _, exists := doc[key]; exists {
 				return fmt.Errorf("keys %q and %q cannot appear together", key, rawKey)
 			}
-			if key != "trusted" {
+			if key != "trusted" && key != "local" {
 				return fmt.Errorf("key %q cannot append to a non-list", rawKey)
 			}
 			if _, ok := value.([]any); !ok {
@@ -35,6 +38,10 @@ func validate(doc map[string]any, global bool) error {
 			continue
 		}
 		switch key {
+		case "local":
+			if err := validateLocalList(value); err != nil {
+				return err
+			}
 		case "tools", "env", "credentials":
 			values, ok := value.(map[string]any)
 			if !ok {
@@ -69,6 +76,20 @@ func validate(doc map[string]any, global bool) error {
 	}
 	_, err := decode(normalized)
 	return err
+}
+
+func validateLocalList(value any) error {
+	items, ok := value.([]any)
+	if !ok {
+		return fmt.Errorf("key %q must be a list", "local")
+	}
+	for _, item := range items {
+		name, ok := item.(string)
+		if !ok || !localToolName.MatchString(name) {
+			return fmt.Errorf("invalid local entry %q", item)
+		}
+	}
+	return nil
 }
 
 func merge(dst, src map[string]any, source, prefix string, origins map[string]string) error {

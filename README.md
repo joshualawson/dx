@@ -73,6 +73,45 @@ dx stop
 dx stop --all
 ```
 
+### Shims
+
+A shim is a link named after a tool, such as `go` or `npm`, that runs dx; all its arguments go to the tool, not dx flags. Install every built-in command, or name individual tools:
+
+```sh
+dx shims install
+dx shims install go npm
+```
+
+Put the shims folder before local tool installs on `PATH`. The install command prints this reminder when needed.
+
+| OS | Shim folder | PATH setup |
+| --- | --- | --- |
+| macOS, Linux | `$XDG_DATA_HOME/dx/bin` (default `~/.local/share/dx/bin`) | `export PATH="$HOME/.local/share/dx/bin:$PATH"` |
+| Windows | `%LOCALAPPDATA%\dx\bin` | Add the folder to the start of your user `PATH` in System Properties → Environment Variables. |
+
+Shims are symlinks on macOS and Linux. On Windows they are hard links, or copies when linking is unavailable. Run a local installation for one command with `DX_LOCAL=1`, or configure `local`:
+
+```sh
+DX_LOCAL=1 go test ./...
+```
+
+```yaml
+local: [go, npm]
+```
+
+Local lookup skips the shims folder and other dx links. There is no fallback: a selected local tool that is not found exits 125. Direct `dx <tool>` calls always use containers.
+
+```sh
+dx which go
+dx shims list
+dx shims uninstall go
+dx shims uninstall
+```
+
+`dx which` reports the image, reason, and warm/cold state a shim would use from the current folder, or the selected local executable. It also reports shim and `PATH` status. `dx shims list` marks stale shims; re-run `dx shims install` after upgrading dx to refresh an old symlink or Windows copy. Uninstall only removes dx shims.
+
+Language servers such as `gopls` and `rust-analyzer` work through shims on macOS and Linux because container paths match host paths. The first call in a project starts a warm container and may take a few seconds; later calls are fast. On Windows, `/c/...` container paths are not editor-mapped, so use shims for command-line tools rather than language servers.
+
 ### Files and ownership
 
 On Linux, commands run as your uid and gid. A named `dx-home` volume is mounted at your home path in the container; selected credential files and folders are mounted within it.
@@ -99,6 +138,8 @@ tools:
     warm: true
   terraform:
     warm: false
+# Make these shims run existing local tools instead of containers.
+local: [go, npm]
 # Add environment values after filtered host values.
 env:
   GOPRIVATE: github.com/example/*
@@ -123,7 +164,7 @@ dx config --explain
 
 ## Trust
 
-A repository `.dx.yaml` can select images, change env, share credentials, and turn on the Docker socket, so dx asks before using untrusted files. Global config can list trusted folders. Approvals record the path and file hash, so changed files need approval again.
+A repository `.dx.yaml` can select images, change env, share credentials, and turn on the Docker socket, so dx asks before using untrusted files. `local` needs no approval because it can only run tools already on your `PATH`. Global config can list trusted folders. Approvals record the path and file hash, so changed files need approval again.
 
 ```sh
 dx trust
@@ -171,6 +212,10 @@ Use `--docker` or `docker: true` in config to mount the Docker socket. Remote `t
 | `dx doctor [--recheck]` | Check dx and Docker setup |
 | `dx ps` | List warm containers |
 | `dx stop [--all]` | Stop warm containers |
+| `dx shims install [tool...]` | Install tool shims |
+| `dx shims uninstall [tool...]` | Remove tool shims |
+| `dx shims list` | List shims and their status |
+| `dx which <tool>` | Show whether a shim uses dx or a local executable |
 | `dx version` | Print version information |
 | `dx help` | Print help |
 
@@ -219,6 +264,8 @@ tools:
 - Run `dx doctor` to inspect Docker, configuration, project markers, and warm containers.
 - Run `dx doctor --recheck` after changing Docker host-networking support.
 - Stop warm containers with `dx stop` after updating an image under the same tag.
+- Use `dx which <tool>` to see whether a shim selects dx or a local executable.
+- The `shims:` line in `dx doctor` reports the shim directory, `PATH` status, installed count, and stale count.
 - On Linux, dx runs as your numeric uid and gid; its mounted identity files let git and SSH resolve that user.
 
 ## Development

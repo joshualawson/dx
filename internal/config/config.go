@@ -19,6 +19,7 @@ type Config struct {
 	Docker      bool              `yaml:"docker"`
 	Credentials map[string]bool   `yaml:"credentials"`
 	Trusted     []string          `yaml:"trusted"`
+	Local       []string          `yaml:"local"`
 	IdleTimeout Duration          `yaml:"idle_timeout"`
 }
 
@@ -54,6 +55,15 @@ func (c Config) CredentialEnabled(name string) bool {
 		return enabled
 	}
 	return true
+}
+
+func (c Config) RunsLocal(tool string) bool {
+	for _, local := range c.Local {
+		if local == tool {
+			return true
+		}
+	}
+	return false
 }
 
 type Source struct {
@@ -107,7 +117,7 @@ func Load(opts Options) (*Result, error) {
 	defaults := map[string]any{
 		"root": false, "tools": map[string]any{}, "env": map[string]any{},
 		"docker": false, "credentials": map[string]any{"all": true},
-		"trusted": []any{}, "idle_timeout": "30m",
+		"trusted": []any{}, "local": []any{}, "idle_timeout": "30m",
 	}
 	if err := merge(merged, defaults, "default", "", result.Origins); err != nil {
 		return nil, err

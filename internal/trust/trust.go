@@ -145,6 +145,9 @@ func Describe(doc map[string]any) []string {
 	var lines []string
 	for key, value := range doc {
 		base := strings.TrimSuffix(key, "+")
+		if base == "local" {
+			continue
+		}
 		if root, ok := value.(bool); base == "root" && ok && !root {
 			continue
 		}

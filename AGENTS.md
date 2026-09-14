@@ -27,6 +27,7 @@ Personal CLI that runs development tools inside Docker containers as if they wer
 | `internal/trust` | Approval of `.dx.yaml` files |
 | `internal/project` | Project root detection |
 | `internal/route` | Command → image resolution |
+| `internal/shim` | Shim install, detection and local tool lookup |
 | `internal/hostenv` | Credential mounts, env filtering, host → container paths |
 | `internal/docker` | Building and running `docker` commands |
 | `images/<name>` | Toolchain Dockerfiles |
