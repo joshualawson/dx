@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -33,6 +34,11 @@ func TestCandidateNames(t *testing.T) {
 }
 
 func TestFindLocal(t *testing.T) {
+	// Real filesystem lookups must follow the host's PATH and executable naming rules.
+	goos, file, pathext := runtime.GOOS, "go", ""
+	if goos == "windows" {
+		file, pathext = "go.exe", ".exe"
+	}
 	tests := []struct {
 		name  string
 		setup func(*testing.T, Installer, string)
@@ -40,40 +46,43 @@ func TestFindLocal(t *testing.T) {
 		{"shim dir", func(t *testing.T, i Installer, dir string) {
 			writeTestFile(t, i.toolPath("go"), "not even a shim", 0755)
 		}},
-		{"symlink elsewhere", func(t *testing.T, i Installer, dir string) { testSymlink(t, i.Exe, filepath.Join(dir, "go")) }},
+		{"symlink elsewhere", func(t *testing.T, i Installer, dir string) { testSymlink(t, i.Exe, filepath.Join(dir, file)) }},
 		{"copy elsewhere", func(t *testing.T, i Installer, dir string) {
-			writeTestFile(t, filepath.Join(dir, "go"), "current dx binary", 0755)
+			writeTestFile(t, filepath.Join(dir, file), "current dx binary", 0755)
 		}},
 		{"hard link elsewhere", func(t *testing.T, i Installer, dir string) {
-			if err := os.Link(i.Exe, filepath.Join(dir, "go")); err != nil {
+			if err := os.Link(i.Exe, filepath.Join(dir, file)); err != nil {
 				t.Fatal(err)
 			}
 		}},
 		{"non executable", func(t *testing.T, i Installer, dir string) {
-			writeTestFile(t, filepath.Join(dir, "go"), "real tool", 0644)
+			if goos == "windows" {
+				t.Skip("windows files have no execute permission bits")
+			}
+			writeTestFile(t, filepath.Join(dir, file), "real tool", 0644)
 		}},
 		{"directory", func(t *testing.T, i Installer, dir string) {
-			if err := os.Mkdir(filepath.Join(dir, "go"), 0755); err != nil {
+			if err := os.Mkdir(filepath.Join(dir, file), 0755); err != nil {
 				t.Fatal(err)
 			}
 		}},
 		{"stale existing symlink", func(t *testing.T, i Installer, dir string) {
 			old := filepath.Join(t.TempDir(), "dx")
 			writeTestFile(t, old, "old dx", 0755)
-			testSymlink(t, old, filepath.Join(dir, "go"))
+			testSymlink(t, old, filepath.Join(dir, file))
 		}},
 		{"missing candidate", func(t *testing.T, i Installer, dir string) {}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			i := testInstaller(t, "linux")
+			i := testInstaller(t, goos)
 			first, real, last := t.TempDir(), t.TempDir(), t.TempDir()
 			tt.setup(t, i, first)
-			want := filepath.Join(real, "go")
+			want := filepath.Join(real, file)
 			writeTestFile(t, want, "real tool", 0755)
-			writeTestFile(t, filepath.Join(last, "go"), "later tool", 0755)
-			pathEnv := strings.Join([]string{"", i.Dir + "/", first, "", real, last}, ":")
-			got, err := FindLocal("go", pathEnv, "", "linux", i.Dir, i.Exe)
+			writeTestFile(t, filepath.Join(last, file), "later tool", 0755)
+			pathEnv := strings.Join([]string{"", i.Dir + string(filepath.Separator), first, "", real, last}, string(os.PathListSeparator))
+			got, err := FindLocal("go", pathEnv, pathext, goos, i.Dir, i.Exe)
 			if err != nil || got != want {
 				t.Fatalf("FindLocal() = %q, %v, want %q", got, err, want)
 			}

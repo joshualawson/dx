@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -131,7 +132,7 @@ func TestInstallRefusesNonShim(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := i.Install([]string{"go"}); err == nil || !strings.Contains(err.Error(), path) {
+			if _, err := i.Install([]string{"go"}); err == nil || !strings.Contains(err.Error(), strconv.Quote(path)) {
 				t.Fatalf("Install() error = %v", err)
 			}
 			after, err := os.Lstat(path)
@@ -268,7 +269,7 @@ func TestUninstallRefusesNonShim(t *testing.T) {
 	i := testInstaller(t, "linux")
 	path := i.toolPath("go")
 	writeTestFile(t, path, "not dx", 0755)
-	if _, err := i.Uninstall([]string{"go"}); err == nil || !strings.Contains(err.Error(), path) {
+	if _, err := i.Uninstall([]string{"go"}); err == nil || !strings.Contains(err.Error(), strconv.Quote(path)) {
 		t.Fatalf("Uninstall() error = %v", err)
 	}
 	if data, err := os.ReadFile(path); err != nil || string(data) != "not dx" {

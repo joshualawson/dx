@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -177,7 +178,7 @@ func TestInstallerRefusesDifferentProvenance(t *testing.T) {
 				t.Fatalf("List() = %+v, %v", entries, err)
 			}
 			for _, operation := range []func([]string) ([]string, error){i.Install, i.Uninstall} {
-				if _, err := operation([]string{"go"}); err == nil || !strings.Contains(err.Error(), candidate) {
+				if _, err := operation([]string{"go"}); err == nil || !strings.Contains(err.Error(), strconv.Quote(candidate)) {
 					t.Fatalf("expected refusal naming %q, got %v", candidate, err)
 				}
 			}
